@@ -1,0 +1,29 @@
+schema_version: "1.0"
+
+name: "solana-web3-to-kit"
+version: "0.1.0"
+description: "Migrates @solana/web3.js v1 to @solana/kit (the new functional, tree-shakeable Solana SDK)."
+author: "arthur.barraine@gmail.com"
+license: "MIT"
+
+targets:
+  languages: ["typescript"]
+
+keywords:
+  - solana
+  - web3.js
+  - "@solana/web3.js"
+  - "@solana/kit"
+  - migration
+  - blockchain
+
+registry:
+  access: "public"
+  visibility: "public"
+
+capabilities: []
+
+workflows:
+  - name: main
+    default: true
+    path: workflow.yaml

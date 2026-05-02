@@ -1,0 +1,295 @@
+diff --git a/tests/src/transaction.test.ts b/tests/src/transaction.test.ts
+index fcea149..8e8f2e7 100644
+--- a/tests/src/transaction.test.ts
++++ b/tests/src/transaction.test.ts
+@@ -1,3 +1,5 @@
++import { address, generateKeyPairSigner } from '@solana/kit';
++import { getTransferSolInstruction } from '@solana-program/system';
+ import { describe, test } from "node:test";
+ import {
+   Keypair,
+@@ -23,14 +25,12 @@ import { sendAndConfirmTransaction } from "@solana/web3.js";
+ import assert from "node:assert";
+ 
+ const LOCALHOST = "http://127.0.0.1:8899";
+-const MEMO_PROGRAM_ID = new PublicKey(
+-  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+-);
++const MEMO_PROGRAM_ID = address("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+ 
+ describe("confirmTransaction", () => {
+   test("confirmTransaction works for a successful transaction", async () => {
+     const connection = new Connection(LOCALHOST);
+-    const [sender, recipient] = [Keypair.generate(), Keypair.generate()];
++    const [sender, recipient] = [await generateKeyPairSigner(), await generateKeyPairSigner()];
+     const lamportsToAirdrop = 2 * LAMPORTS_PER_SOL;
+     await airdropIfRequired(
+       connection,
+@@ -41,11 +41,7 @@ describe("confirmTransaction", () => {
+     const signature = await sendAndConfirmTransaction(
+       connection,
+       new Transaction().add(
+-        SystemProgram.transfer({
+-          fromPubkey: sender.publicKey,
+-          toPubkey: recipient.publicKey,
+-          lamports: 1_000_000,
+-        }),
++        getTransferSolInstruction({ source: sender.publicKey, destination: recipient.publicKey, amount: 1_000_000 }),
+       ),
+       [sender],
+     );
+@@ -56,19 +52,15 @@ describe("confirmTransaction", () => {
+ describe("getSimulationComputeUnits", () => {
+   test("getSimulationComputeUnits returns 300 CUs for a SOL transfer, and 3888 for a SOL transfer with a memo", async () => {
+     const connection = new Connection(LOCALHOST);
+-    const sender = Keypair.generate();
++    const sender = await generateKeyPairSigner();
+     await airdropIfRequired(
+       connection,
+       sender.publicKey,
+       1 * LAMPORTS_PER_SOL,
+       1 * LAMPORTS_PER_SOL,
+     );
+-    const recipient = Keypair.generate().publicKey;
+-    const sendSol = SystemProgram.transfer({
+-      fromPubkey: sender.publicKey,
+-      toPubkey: recipient,
+-      lamports: 1_000_000,
+-    });
++    const recipient = await generateKeyPairSigner().publicKey;
++    const sendSol = getTransferSolInstruction({ source: sender.publicKey, destination: recipient, amount: 1_000_000 });
+     const sayThanks = new TransactionInstruction({
+       keys: [],
+       programId: MEMO_PROGRAM_ID,
+@@ -97,21 +89,17 @@ describe("getSimulationComputeUnits", () => {
+ describe("Transaction utilities", () => {
+   test("sendTransaction without priority fee should send and confirm a transaction", async () => {
+     const connection = new Connection(LOCALHOST);
+-    const sender = Keypair.generate();
++    const sender = await generateKeyPairSigner();
+     await airdropIfRequired(
+       connection,
+       sender.publicKey,
+       2 * LAMPORTS_PER_SOL,
+       1 * LAMPORTS_PER_SOL,
+     );
+-    const recipient = Keypair.generate();
++    const recipient = await generateKeyPairSigner();
+ 
+     const transaction = new Transaction().add(
+-      SystemProgram.transfer({
+-        fromPubkey: sender.publicKey,
+-        toPubkey: recipient.publicKey,
+-        lamports: LAMPORTS_PER_SOL * 0.1,
+-      }),
++      getTransferSolInstruction({ source: sender.publicKey, destination: recipient.publicKey, amount: LAMPORTS_PER_SOL * 0.1 }),
+     );
+ 
+     // Add recent blockhash
+@@ -142,7 +130,7 @@ describe("Transaction utilities", () => {
+ 
+   test("prepareTransactionWithCompute should add compute budget instructions", async () => {
+     const connection = new Connection(LOCALHOST);
+-    const sender = Keypair.generate();
++    const sender = await generateKeyPairSigner();
+ 
+     await airdropIfRequired(
+       connection,
+@@ -150,14 +138,10 @@ describe("Transaction utilities", () => {
+       2 * LAMPORTS_PER_SOL,
+       1 * LAMPORTS_PER_SOL,
+     );
+-    const recipient = Keypair.generate();
++    const recipient = await generateKeyPairSigner();
+ 
+     const transaction = new Transaction().add(
+-      SystemProgram.transfer({
+-        fromPubkey: sender.publicKey,
+-        toPubkey: recipient.publicKey,
+-        lamports: LAMPORTS_PER_SOL * 0.1,
+-      }),
++      getTransferSolInstruction({ source: sender.publicKey, destination: recipient.publicKey, amount: LAMPORTS_PER_SOL * 0.1 }),
+     );
+ 
+     // Add recent blockhash and feePayer
+@@ -193,21 +177,17 @@ describe("Transaction utilities", () => {
+ 
+   test("send versioned transaction", async () => {
+     const connection = new Connection(LOCALHOST);
+-    const sender = Keypair.generate();
++    const sender = await generateKeyPairSigner();
+     await airdropIfRequired(
+       connection,
+       sender.publicKey,
+       2 * LAMPORTS_PER_SOL,
+       1 * LAMPORTS_PER_SOL,
+     );
+-    const recipient = Keypair.generate();
++    const recipient = await generateKeyPairSigner();
+ 
+     const instructions = [
+-      SystemProgram.transfer({
+-        fromPubkey: sender.publicKey,
+-        toPubkey: recipient.publicKey,
+-        lamports: LAMPORTS_PER_SOL * 0.1,
+-      }),
++      getTransferSolInstruction({ source: sender.publicKey, destination: recipient.publicKey, amount: LAMPORTS_PER_SOL * 0.1 }),
+     ];
+ 
+     const statusUpdates: any[] = [];
+@@ -237,24 +217,20 @@ describe("Transaction utilities", () => {
+ 
+   test("send versioned transaction with already setComputeLimit instructions", async () => {
+     const connection = new Connection(LOCALHOST);
+-    const sender = Keypair.generate();
++    const sender = await generateKeyPairSigner();
+     await airdropIfRequired(
+       connection,
+       sender.publicKey,
+       2 * LAMPORTS_PER_SOL,
+       1 * LAMPORTS_PER_SOL,
+     );
+-    const recipient = Keypair.generate();
++    const recipient = await generateKeyPairSigner();
+ 
+     const instructions = [
+       ComputeBudgetProgram.setComputeUnitLimit({
+         units: 10000,
+       }),
+-      SystemProgram.transfer({
+-        fromPubkey: sender.publicKey,
+-        toPubkey: recipient.publicKey,
+-        lamports: LAMPORTS_PER_SOL * 0.1,
+-      }),
++      getTransferSolInstruction({ source: sender.publicKey, destination: recipient.publicKey, amount: LAMPORTS_PER_SOL * 0.1 }),
+     ];
+ 
+     const statusUpdates: any[] = [];
+@@ -284,7 +260,7 @@ describe("Transaction utilities", () => {
+ 
+   test("send versioned transaction with lookup table", async () => {
+     const connection = new Connection(LOCALHOST);
+-    const sender = Keypair.generate();
++    const sender = await generateKeyPairSigner();
+     await airdropIfRequired(
+       connection,
+       sender.publicKey,
+@@ -292,9 +268,9 @@ describe("Transaction utilities", () => {
+       1 * LAMPORTS_PER_SOL,
+     );
+ 
+-    const recipient = Keypair.generate();
+-    const recipient2 = Keypair.generate();
+-    const recipient3 = Keypair.generate();
++    const recipient = await generateKeyPairSigner();
++    const recipient2 = await generateKeyPairSigner();
++    const recipient3 = await generateKeyPairSigner();
+ 
+     const [lookupTableAddress, lookupTableAccount] = await createLookupTable(
+       connection,
+@@ -308,21 +284,9 @@ describe("Transaction utilities", () => {
+     );
+ 
+     const instructions = [
+-      SystemProgram.transfer({
+-        fromPubkey: sender.publicKey,
+-        toPubkey: recipient.publicKey,
+-        lamports: LAMPORTS_PER_SOL * 0.1,
+-      }),
+-      SystemProgram.transfer({
+-        fromPubkey: sender.publicKey,
+-        toPubkey: recipient2.publicKey,
+-        lamports: LAMPORTS_PER_SOL * 0.1,
+-      }),
+-      SystemProgram.transfer({
+-        fromPubkey: sender.publicKey,
+-        toPubkey: recipient3.publicKey,
+-        lamports: LAMPORTS_PER_SOL * 0.1,
+-      }),
++      getTransferSolInstruction({ source: sender.publicKey, destination: recipient.publicKey, amount: LAMPORTS_PER_SOL * 0.1 }),
++      getTransferSolInstruction({ source: sender.publicKey, destination: recipient2.publicKey, amount: LAMPORTS_PER_SOL * 0.1 }),
++      getTransferSolInstruction({ source: sender.publicKey, destination: recipient3.publicKey, amount: LAMPORTS_PER_SOL * 0.1 }),
+     ];
+ 
+     const signature = await sendVersionedTransaction(
+@@ -343,21 +307,17 @@ describe("Transaction utilities", () => {
+ 
+   test("sendTransaction should prepare and send a transaction and add priority fee instructions", async () => {
+     const connection = new Connection(LOCALHOST);
+-    const sender = Keypair.generate();
++    const sender = await generateKeyPairSigner();
+     await airdropIfRequired(
+       connection,
+       sender.publicKey,
+       2 * LAMPORTS_PER_SOL,
+       1 * LAMPORTS_PER_SOL,
+     );
+-    const recipient = Keypair.generate();
++    const recipient = await generateKeyPairSigner();
+ 
+     const transaction = new Transaction().add(
+-      SystemProgram.transfer({
+-        fromPubkey: sender.publicKey,
+-        toPubkey: recipient.publicKey,
+-        lamports: LAMPORTS_PER_SOL * 0.1,
+-      }),
++      getTransferSolInstruction({ source: sender.publicKey, destination: recipient.publicKey, amount: LAMPORTS_PER_SOL * 0.1 }),
+     );
+ 
+     const statusUpdates: any[] = [];
+@@ -391,24 +351,20 @@ describe("Transaction utilities", () => {
+ 
+   test("sendTransaction still works when there is already a setComputeUnitPrice instruction", async () => {
+     const connection = new Connection(LOCALHOST);
+-    const sender = Keypair.generate();
++    const sender = await generateKeyPairSigner();
+     await airdropIfRequired(
+       connection,
+       sender.publicKey,
+       2 * LAMPORTS_PER_SOL,
+       1 * LAMPORTS_PER_SOL,
+     );
+-    const recipient = Keypair.generate();
++    const recipient = await generateKeyPairSigner();
+ 
+     const transaction = new Transaction().add(
+       ComputeBudgetProgram.setComputeUnitPrice({
+         microLamports: 1000000,
+       }),
+-      SystemProgram.transfer({
+-        fromPubkey: sender.publicKey,
+-        toPubkey: recipient.publicKey,
+-        lamports: LAMPORTS_PER_SOL * 0.1,
+-      }),
++      getTransferSolInstruction({ source: sender.publicKey, destination: recipient.publicKey, amount: LAMPORTS_PER_SOL * 0.1 }),
+     );
+ 
+     const statusUpdates: any[] = [];
+@@ -442,24 +398,20 @@ describe("Transaction utilities", () => {
+ 
+   test("sendTransaction still works when there is already a setComputeUnitLimit instruction", async () => {
+     const connection = new Connection(LOCALHOST);
+-    const sender = Keypair.generate();
++    const sender = await generateKeyPairSigner();
+     await airdropIfRequired(
+       connection,
+       sender.publicKey,
+       2 * LAMPORTS_PER_SOL,
+       1 * LAMPORTS_PER_SOL,
+     );
+-    const recipient = Keypair.generate();
++    const recipient = await generateKeyPairSigner();
+ 
+     const transaction = new Transaction().add(
+       ComputeBudgetProgram.setComputeUnitLimit({
+         units: 10000,
+       }),
+-      SystemProgram.transfer({
+-        fromPubkey: sender.publicKey,
+-        toPubkey: recipient.publicKey,
+-        lamports: LAMPORTS_PER_SOL * 0.1,
+-      }),
++      getTransferSolInstruction({ source: sender.publicKey, destination: recipient.publicKey, amount: LAMPORTS_PER_SOL * 0.1 }),
+     );
+ 
+     const statusUpdates: any[] = [];

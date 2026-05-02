@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/codemod/codemod/refs/heads/main/schemas/workflow.json
+
+version: "1"
+
+nodes:
+  - id: migrate
+    name: "@solana/web3.js v1 → @solana/kit"
+    type: automatic
+    steps:
+      - name: "Deterministic codemod (jssg)"
+        js-ast-grep:
+          js_file: scripts/codemod.ts
+          language: "typescript"
+          include: ["**/*.{ts,tsx}"]
+          exclude: ["**/node_modules/**", "**/dist/**", "**/build/**", "**/*.d.ts"]
+
+      - name: "AI: handle edge cases the deterministic step left behind"
+        ai:
+          model: "claude-sonnet-4-5"
+          llm_protocol: "anthropic"
+          max_steps: 60
+          system_prompt: |
+            You are a careful TypeScript refactoring assistant. You modify files in place.
+            Rules:
+            - NEVER change behavior. Preserve commitment levels, signer sets, error handling, and async semantics.
+            - When unsure, leave a `// TODO(solana-kit-migration):` comment with a one-line explanation rather than guessing.
+            - Run a final `tsc --noEmit` if available; report errors but do NOT silence them with `any`.
+          prompt: |
+            A previous deterministic codemod has migrated most of `@solana/web3.js` v1 patterns to `@solana/kit`.
+            Your job is to handle the remaining edge cases. Use `glob` to find `**/*.{ts,tsx}` (excluding node_modules).
+
+            For each file that still imports from `@solana/web3.js`, perform these conversions where safe:
+
+            1. **Connection → RPC**: `new Connection(url)` → `createSolanaRpc(url)`. Every method call
+               becomes a builder requiring `.send()`. Numeric returns become `bigint`. Returns shape `{value}`.
+               Example: `connection.getBalance(pk)` → `(await rpc.getBalance(addr).send()).value`.
+
+            2. **Transaction builder → pipe**: `new Transaction().add(ix).feePayer = ...` and
+               `sendAndConfirmTransaction` → `pipe(createTransactionMessage({version: 'legacy'}), m => setTransactionMessageFeePayer(...), m => setTransactionMessageLifetimeUsingBlockhash(...), m => appendTransactionMessageInstructions(...))`
+               then `signTransactionMessageWithSigners` and `sendAndConfirmTransactionFactory({rpc, rpcSubscriptions})`.
+               You MUST hoist a single factory at module/function scope and source `rpcSubscriptions` from `createSolanaRpcSubscriptions(wsUrl)`.
+
+            3. **`BN` → `bigint`**: Replace `new BN(x)` with `BigInt(x)` when `x` is a string/number,
+               or with `${x}n` when `x` is a numeric literal. Convert chained `.add(...)`, `.mul(...)`,
+               `.toNumber()`, `.toString()` to native operators. Remove `import BN from "bn.js"`.
+
+            4. **Subscriptions**: `connection.onAccountChange(pk, cb, commitment)` →
+               `const sub = await rpcSubscriptions.accountNotifications(addr, {commitment}).subscribe({abortSignal: ac.signal}); for await (const n of sub) cb(n.value);`
+               with an `AbortController` per subscription.
+
+            5. **`PublicKey` methods**: `pk.toBase58()` and `pk.toString()` → just `pk` (already a string).
+               `pk.toBuffer()`/`pk.toBytes()` → `getAddressEncoder().encode(pk)` (import from `@solana/kit`).
+               `a.equals(b)` → `a === b`.
+
+            6. **`Buffer` → `Uint8Array`**: in instruction `data` fields and anywhere bytes cross an SDK
+               boundary. Use `getBase64Encoder()`, `getUtf8Encoder()` from `@solana/kit` for transcoding.
+
+            7. **TransactionInstruction literals**: `{ keys: [{pubkey, isSigner, isWritable}], programId, data }`
+               → `{ accounts: [{address, role}], programAddress, data }` where `role` maps from
+               `(isSigner, isWritable)` via `AccountRole` (`READONLY`, `WRITABLE`, `READONLY_SIGNER`, `WRITABLE_SIGNER`).
+               Import `AccountRole` from `@solana/kit`.
+
+            8. **Cleanup**: After all rewrites, remove specifiers from `@solana/web3.js` imports that are
+               no longer referenced. If the import becomes empty, delete the line.
+
+            9. **Async propagation**: For any newly-async call (`generateKeyPairSigner`, `getProgramDerivedAddress`,
+               `createKeyPairSignerFromBytes`, `signTransactionMessageWithSigners`), mark the enclosing function
+               `async` and propagate `await` upward as needed.
+
+            Do NOT touch files that don't import from `@solana/web3.js`. Do NOT modify lockfiles.
+            Report at the end: how many files changed, how many TODO markers you added, and any unresolvable
+            patterns you skipped.

@@ -1,0 +1,16 @@
+{
+  "name": "solana-web3-to-kit",
+  "version": "0.1.0",
+  "description": "Migrates @solana/web3.js v1 to @solana/kit",
+  "packageManager": "pnpm@10.x",
+  "main": "scripts/codemod.ts",
+  "scripts": {
+    "test": "codemod jssg test -l typescript ./scripts/codemod.ts ./tests",
+    "test:update": "codemod jssg test -l typescript ./scripts/codemod.ts ./tests -u",
+    "validate": "codemod workflow validate -w workflow.yaml"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

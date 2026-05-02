@@ -1,7 +1,7 @@
 schema_version: "1.0"
 
 name: "solana-web3-to-kit"
-version: "0.1.0"
+version: "0.2.0"
 description: "Migrates @solana/web3.js v1 to @solana/kit (the new functional, tree-shakeable Solana SDK)."
 author: "arthur.barraine@gmail.com"
 license: "MIT"

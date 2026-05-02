@@ -1,6 +1,6 @@
 {
   "name": "solana-web3-to-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Migrates @solana/web3.js v1 to @solana/kit",
   "packageManager": "pnpm@10.x",
   "main": "scripts/codemod.ts",

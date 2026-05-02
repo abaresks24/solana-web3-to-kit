@@ -12,17 +12,22 @@ Built with [`jssg`](https://docs.codemod.com/jssg/intro) (deterministic AST rewr
 
 Validated end-to-end on [`solana-developers/helpers`](https://github.com/solana-developers/helpers) — a 2,000-LOC Solana TypeScript utility library actively used in tutorials.
 
-| Pattern | Baseline | Rewritten | Remaining |
-| --- | ---:| ---:| ---:|
-| `new PublicKey(x)` | 7 | 6 | 1 (JSDoc comment — correctly skipped) |
-| `Keypair.generate()` | 35 | 35 | 0 |
-| `Keypair.fromSecretKey(x)` | 4 | 4 | 0 |
-| `SystemProgram.transfer({...})` | 15 | 15 | 0 |
-| **Total real patterns** | **60** | **60** | **0** |
+| Pattern | Remaining |
+| --- | ---:|
+| `new PublicKey(x)` | 1 (JSDoc comment — correctly skipped) |
+| `Keypair.generate()` | 0 |
+| `Keypair.fromSecretKey(x)` | 0 |
+| `SystemProgram.transfer({...})` | 0 |
+| `SystemProgram.programId` | 0 |
+| `clusterApiUrl(x)` | 0 |
+| `PublicKey.findProgramAddressSync(...)` | 0 |
+| `new Connection(...)` | 0 |
 
-**100% coverage. Zero false positives. 9 files changed, 71 insertions, 124 deletions.**
+**100% coverage on every deterministic pattern. Zero false positives. 12 files changed, 223 insertions, 273 deletions.**
 
 ## What it rewrites (deterministically)
+
+**Calls and constructors**
 
 | v1 pattern | kit pattern |
 | --- | --- |
@@ -30,11 +35,27 @@ Validated end-to-end on [`solana-developers/helpers`](https://github.com/solana-
 | `Keypair.generate()` | `await generateKeyPairSigner()` |
 | `Keypair.fromSecretKey(x)` | `await createKeyPairSignerFromBytes(x)` |
 | `const [pda, bump] = PublicKey.findProgramAddressSync(seeds, prog)` | `const { address: pda, bump } = await getProgramDerivedAddress({ programAddress: prog, seeds })` |
-| `clusterApiUrl('devnet')` | `'https://api.devnet.solana.com'` (and same for testnet, mainnet-beta) |
-| `SystemProgram.transfer({ fromPubkey, toPubkey, lamports })` | `getTransferSolInstruction({ source, destination, amount })` (handles all shorthand variants) |
+| `clusterApiUrl('devnet')` | `'https://api.devnet.solana.com'` (and testnet, mainnet-beta) |
+| `SystemProgram.transfer({ fromPubkey, toPubkey, lamports })` | `getTransferSolInstruction({ source, destination, amount })` (all shorthand variants) |
 | `SystemProgram.programId` | `SYSTEM_PROGRAM_ADDRESS` |
+| `new Connection(url, commitment?)` | `createSolanaRpc(url)` (commitment dropped — kit applies per-call) |
 
-Every rewrite **also adds the new import** to `@solana/kit` or `@solana-program/system` (idempotent — merges with existing imports from the same module).
+**RPC method propagation** — `<rpcVar>.<method>(...)` → `<rpcVar>.<method>(...).send()` for ~40 whitelisted RPC methods (`getBalance`, `getLatestBlockhash`, `requestAirdrop`, `sendTransaction`, etc.), where `<rpcVar>` is discovered via:
+- variable declarations: `const conn = new Connection(...)` / `const conn: Connection`
+- function parameters: `(connection: Connection, ...)`
+- class properties: `constructor(public conn: Connection)` (resolves `this.conn.<method>(...)` too)
+- never via name-baseline guesses (avoids the wallet-adapter false-positive class of bug)
+
+**Signer property renames** — `<signerVar>.publicKey` → `<signerVar>.address`, `<signerVar>.secretKey` → `<signerVar>.privateKey`, where `<signerVar>` is discovered from:
+- direct declarations: `const kp = Keypair.generate()` / `Keypair.fromSecretKey(x)`
+- destructured arrays: `const [a, b] = [Keypair.generate(), Keypair.generate()]`
+- typed declarations and parameters: `: Keypair`
+- class properties via `this.kp.publicKey` resolution
+- never on arbitrary `.publicKey` access (so wallet-adapter `wallet.publicKey` is safely preserved)
+
+**Type annotations** — `Keypair` → `KeyPairSigner`, `PublicKey` → `Address`, `Connection` → `Rpc<SolanaRpcApi>`. Matches `type_identifier` AST nodes only, never the value-position usages.
+
+**Imports** — every rewrite adds the new specifiers to `@solana/kit` / `@solana-program/system` and merges idempotently with any pre-existing import from the same module. The original `@solana/web3.js` import is left intact for the AI step / human to clean up unused specifiers.
 
 ## Safety guarantees
 
@@ -47,11 +68,11 @@ Every rewrite **also adds the new import** to `@solana/kit` or `@solana-program/
 
 The deterministic step leaves these to the AI step (`workflow.yaml` → `ai`):
 
-- `new Connection(url)` → `createSolanaRpc(url)` + `.send()` propagation + `{value}` unwrap + `bigint` type flow
+- `{value}` unwrap on RPC results that the deterministic `.send()` propagation cannot infer (`(await rpc.getBalance(addr).send()).value`)
 - `new Transaction().add(ix)` + `sendAndConfirmTransaction` → full `pipe(createTransactionMessage, ...)` rewrite + factory hoisting
 - `BN` arithmetic → native `bigint` operators
 - `connection.onAccountChange(...)` callback → `accountNotifications().subscribe()` AsyncIterable + `AbortController`
-- `pk.toBase58()` / `.equals()` removal (requires receiver-type analysis)
+- `pk.toBase58()` / `.equals()` removal on receivers we can't statically prove are addresses/signers
 - `Buffer` → `Uint8Array` + encoder swaps
 - `TransactionInstruction` literal field renames (`isSigner`/`isWritable` → `AccountRole`)
 - Async propagation: marking enclosing functions `async` when newly-async calls are introduced

@@ -1,13 +1,39 @@
 diff --git a/src/lib/token.ts b/src/lib/token.ts
-index 6a683a6..0d88848 100644
+index 6a683a6..b9e5570 100644
 --- a/src/lib/token.ts
 +++ b/src/lib/token.ts
 @@ -1,3 +1,5 @@
-+import { generateKeyPairSigner } from '@solana/kit';
++import { generateKeyPairSigner, KeyPairSigner, Address, Rpc, SolanaRpcApi } from '@solana/kit';
 +import { getTransferSolInstruction } from '@solana-program/system';
  import { Connection, Keypair, PublicKey, sendAndConfirmTransaction, Signer, SystemProgram, Transaction, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
  import { makeKeypairs } from "./keypair";
  import { createAssociatedTokenAccountIdempotentInstruction, createInitializeInstruction, createInitializeMetadataPointerInstruction, createInitializeMint2Instruction, createInitializeMintInstruction, createMintToInstruction, ExtensionType, getAssociatedTokenAddressSync, getMinimumBalanceForRentExemptMint, getMintLen, LENGTH_SIZE, MINT_SIZE, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, TYPE_SIZE } from "@solana/spl-token";
+@@ -15,8 +17,8 @@ const TOKEN_PROGRAM: typeof TOKEN_2022_PROGRAM_ID | typeof TOKEN_PROGRAM_ID =
+ export const createAccountsMintsAndTokenAccounts = async (
+   usersAndTokenBalances: Array<Array<number>>,
+   lamports: number,
+-  connection: Connection,
+-  payer: Keypair,
++  connection: Rpc<SolanaRpcApi>,
++  payer: KeyPairSigner,
+ ) => {
+   const userCount = usersAndTokenBalances.length;
+   // Set the variable mintCount to the largest array in the usersAndTokenBalances array
+@@ -29,12 +31,12 @@ export const createAccountsMintsAndTokenAccounts = async (
+ 
+   // This will be returned
+   // [user index][mint index]address of token account
+-  let tokenAccounts: Array<Array<PublicKey>>;
++  let tokenAccounts: Array<Array<Address>>;
+ 
+   tokenAccounts = users.map((user) => {
+     return mints.map((mint) =>
+       getAssociatedTokenAddressSync(
+-        mint.publicKey,
++        mint.address,
+         user.publicKey,
+         false,
+         TOKEN_PROGRAM,
 @@ -43,11 +45,7 @@ export const createAccountsMintsAndTokenAccounts = async (
    });
  
@@ -17,16 +43,177 @@ index 6a683a6..0d88848 100644
 -      toPubkey: user.publicKey,
 -      lamports,
 -    }),
-+    getTransferSolInstruction({ source: payer.publicKey, destination: user.publicKey, amount: lamports }),
++    getTransferSolInstruction({ source: payer.address, destination: user.publicKey, amount: lamports }),
    );
  
    // Airdrops to user
-@@ -115,7 +113,7 @@ export const makeTokenMint = async (
-   updateAuthority: PublicKey = mintAuthority.publicKey,
-   freezeAuthority: PublicKey | null = null,
+@@ -56,8 +54,8 @@ export const createAccountsMintsAndTokenAccounts = async (
+   const createMintInstructions: Array<TransactionInstruction> = mints.map(
+     (mint) =>
+       SystemProgram.createAccount({
+-        fromPubkey: payer.publicKey,
+-        newAccountPubkey: mint.publicKey,
++        fromPubkey: payer.address,
++        newAccountPubkey: mint.address,
+         lamports: minimumLamports,
+         space: MINT_SIZE,
+         programId: TOKEN_PROGRAM,
+@@ -76,7 +74,7 @@ export const createAccountsMintsAndTokenAccounts = async (
+           tokenAccounts[userIndex][mintIndex],
+           tokenBalance,
+           users[userIndex].publicKey,
+-          payer.publicKey,
++          payer.address,
+         );
+       });
+     });
+@@ -105,17 +103,17 @@ export const createAccountsMintsAndTokenAccounts = async (
+ };
+ 
+ export const makeTokenMint = async (
+-  connection: Connection,
+-  mintAuthority: Keypair,
++  connection: Rpc<SolanaRpcApi>,
++  mintAuthority: KeyPairSigner,
+   name: string,
+   symbol: string,
+   decimals: number,
+   uri: string,
+   additionalMetadata: Array<[string, string]> | Record<string, string> = [],
+-  updateAuthority: PublicKey = mintAuthority.publicKey,
+-  freezeAuthority: PublicKey | null = null,
++  updateAuthority: Address = mintAuthority.address,
++  freezeAuthority: Address | null = null,
  ) => {
 -  const mint = Keypair.generate();
 +  const mint = await generateKeyPairSigner();
  
    if (!Array.isArray(additionalMetadata)) {
      additionalMetadata = Object.entries(additionalMetadata);
+@@ -124,7 +122,7 @@ export const makeTokenMint = async (
+   const addMetadataInstructions = additionalMetadata.map(
+     (additionalMetadataItem) => {
+       return createUpdateFieldInstruction({
+-        metadata: mint.publicKey,
++        metadata: mint.address,
+         updateAuthority: updateAuthority,
+         programId: TOKEN_2022_PROGRAM_ID,
+         field: additionalMetadataItem[0],
+@@ -134,7 +132,7 @@ export const makeTokenMint = async (
+   );
+ 
+   const metadata: TokenMetadata = {
+-    mint: mint.publicKey,
++    mint: mint.address,
+     name,
+     symbol,
+     uri,
+@@ -146,13 +144,13 @@ export const makeTokenMint = async (
+   const metadataLength = TYPE_SIZE + LENGTH_SIZE + pack(metadata).length;
+   const mintLamports = await connection.getMinimumBalanceForRentExemption(
+     mintLength + metadataLength,
+-  );
++  ).send();
+ 
+   const mintTransaction = new Transaction().add(
+     // Create Account
+     SystemProgram.createAccount({
+-      fromPubkey: mintAuthority.publicKey,
+-      newAccountPubkey: mint.publicKey,
++      fromPubkey: mintAuthority.address,
++      newAccountPubkey: mint.address,
+       space: mintLength,
+       lamports: mintLamports,
+       programId: TOKEN_2022_PROGRAM_ID,
+@@ -160,17 +158,17 @@ export const makeTokenMint = async (
+ 
+     // Initialize metadata pointer (so the mint points to itself for metadata)
+     createInitializeMetadataPointerInstruction(
+-      mint.publicKey,
+-      mintAuthority.publicKey,
+-      mint.publicKey,
++      mint.address,
++      mintAuthority.address,
++      mint.address,
+       TOKEN_2022_PROGRAM_ID,
+     ),
+ 
+     // Initialize mint
+     createInitializeMintInstruction(
+-      mint.publicKey,
++      mint.address,
+       decimals,
+-      mintAuthority.publicKey,
++      mintAuthority.address,
+       freezeAuthority,
+       TOKEN_2022_PROGRAM_ID,
+     ),
+@@ -178,12 +176,12 @@ export const makeTokenMint = async (
+     // Initialize
+     createInitializeInstruction({
+       programId: TOKEN_2022_PROGRAM_ID,
+-      mint: mint.publicKey,
+-      metadata: mint.publicKey,
++      mint: mint.address,
++      metadata: mint.address,
+       name: metadata.name,
+       symbol: metadata.symbol,
+       uri: metadata.uri,
+-      mintAuthority: mintAuthority.publicKey,
++      mintAuthority: mintAuthority.address,
+       updateAuthority: updateAuthority,
+     }),
+ 
+@@ -199,18 +197,18 @@ export const makeTokenMint = async (
+     [mintAuthority, mint],
+   );
+ 
+-  return mint.publicKey;
++  return mint.address;
+ };
+ 
+ // Just a non-exposed helper function to create all the instructions instructions
+ // needed for creating a mint, creating an ATA, and minting tokens to the ATA
+ // TODO: maybe we should expose this? To discuss.
+ const makeMintInstructions = (
+-  mintAddress: PublicKey,
+-  ataAddress: PublicKey,
++  mintAddress: Address,
++  ataAddress: Address,
+   amount: number | bigint,
+-  authority: PublicKey,
+-  payer: PublicKey = authority,
++  authority: Address,
++  payer: Address = authority,
+ ): Array<TransactionInstruction> => {
+   return [
+     // Initializes a new mint and optionally deposits all the newly minted tokens in an account.
+@@ -245,22 +243,22 @@ const makeMintInstructions = (
+ // https://www.quicknode.com/guides/solana-development/transactions/how-to-use-versioned-transactions-on-solana
+ // TODO: maybe we should expose this? To discuss.
+ const makeAndSendAndConfirmTransaction = async (
+-  connection: Connection,
++  connection: Rpc<SolanaRpcApi>,
+   instructions: Array<TransactionInstruction>,
+   signers: Array<Signer>,
+-  payer: Keypair,
++  payer: KeyPairSigner,
+ ) => {
+-  const latestBlockhash = await connection.getLatestBlockhash("confirmed");
++  const latestBlockhash = await connection.getLatestBlockhash("confirmed").send();
+ 
+   const messageV0 = new TransactionMessage({
+-    payerKey: payer.publicKey,
++    payerKey: payer.address,
+     recentBlockhash: latestBlockhash.blockhash,
+     instructions,
+   }).compileToV0Message();
+   const transaction = new VersionedTransaction(messageV0);
+   transaction.sign(signers);
+ 
+-  const signature = await connection.sendTransaction(transaction);
++  const signature = await connection.sendTransaction(transaction).send();
+ 
+   await confirmTransaction(connection, signature);
+ };
+\ No newline at end of file

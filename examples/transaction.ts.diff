@@ -1,0 +1,149 @@
+diff --git a/src/lib/transaction.ts b/src/lib/transaction.ts
+index 26fad16..e8b475a 100644
+--- a/src/lib/transaction.ts
++++ b/src/lib/transaction.ts
+@@ -1,3 +1,4 @@
++import { KeyPairSigner, Address, Rpc, SolanaRpcApi } from '@solana/kit';
+ import {
+   AddressLookupTableAccount,
+   Commitment,
+@@ -15,11 +16,11 @@ import { getErrorFromRPCResponse } from "./logs";
+ import { AddressLookupTableProgram } from "@solana/web3.js";
+ 
+ export const confirmTransaction = async (
+-  connection: Connection,
++  connection: Rpc<SolanaRpcApi>,
+   signature: string,
+   commitment: Commitment = "confirmed",
+ ): Promise<string> => {
+-  const block = await connection.getLatestBlockhash(commitment);
++  const block = await connection.getLatestBlockhash(commitment).send();
+   const rpcResponse = await connection.confirmTransaction(
+     {
+       signature,
+@@ -75,9 +76,9 @@ export function hasSetComputeUnitPriceInstruction(
+ // Credit https://twitter.com/stegabob, originally from
+ // https://x.com/stegaBOB/status/1766662289392889920
+ export const getSimulationComputeUnits = async (
+-  connection: Connection,
++  connection: Rpc<SolanaRpcApi>,
+   instructions: Array<TransactionInstruction>,
+-  payer: PublicKey,
++  payer: Address,
+   lookupTables: Array<AddressLookupTableAccount> | [],
+   commitment: Commitment = "confirmed",
+ ): Promise<number | null> => {
+@@ -109,7 +110,7 @@ export const getSimulationComputeUnits = async (
+     replaceRecentBlockhash: true,
+     sigVerify: false,
+     commitment,
+-  });
++  }).send();
+ 
+   if (rpcResponse?.value?.err) {
+     const logs = rpcResponse.value.logs?.join("\n  • ") || "No logs available";
+@@ -202,9 +203,9 @@ export const DEFAULT_SEND_OPTIONS: Required<Omit<SendTransactionOptions, "onStat
+  * ```
+  */
+ export async function sendTransaction(
+-  connection: Connection,
++  connection: Rpc<SolanaRpcApi>,
+   transaction: Transaction,
+-  signers: Keypair[],
++  signers: KeyPairSigner[],
+   priorityFee: number = 10000,
+   options: SendTransactionOptions & {
+     computeUnitBuffer?: ComputeUnitBuffer;
+@@ -221,7 +222,7 @@ export async function sendTransaction(
+ 
+   if (transaction.recentBlockhash === undefined) {
+     console.log("No blockhash provided. Setting recent blockhash");
+-    const { blockhash } = await connection.getLatestBlockhash(commitment);
++    const { blockhash } = await connection.getLatestBlockhash(commitment).send();
+     transaction.recentBlockhash = blockhash;
+   }
+   if (transaction.feePayer === undefined) {
+@@ -298,9 +299,9 @@ export async function sendTransaction(
+  * ```
+  */
+ export async function sendVersionedTransaction(
+-  connection: Connection,
++  connection: Rpc<SolanaRpcApi>,
+   instructions: Array<TransactionInstruction>,
+-  signers: Keypair[],
++  signers: KeyPairSigner[],
+   priorityFee: number = 10000,
+   lookupTables?: Array<AddressLookupTableAccount>,
+   options: SendTransactionOptions & {
+@@ -330,7 +331,7 @@ export async function sendVersionedTransaction(
+ 
+   const messageV0 = new TransactionMessage({
+     payerKey: signers[0].publicKey,
+-    recentBlockhash: (await connection.getLatestBlockhash(commitment)).blockhash,
++    recentBlockhash: (await connection.getLatestBlockhash(commitment).send()).blockhash,
+     instructions,
+   }).compileToV0Message(lookupTables);
+ 
+@@ -354,10 +355,10 @@ export async function sendVersionedTransaction(
+  * @returns Array of instructions with compute unit instructions added
+  */
+ export async function addComputeInstructions(
+-  connection: Connection,
++  connection: Rpc<SolanaRpcApi>,
+   instructions: Array<TransactionInstruction>,
+   lookupTables: Array<AddressLookupTableAccount>,
+-  payer: PublicKey,
++  payer: Address,
+   priorityFee: number = 10000,
+   computeUnitBuffer: ComputeUnitBuffer = {},
+   commitment: Commitment = "confirmed",
+@@ -441,7 +442,7 @@ export async function addComputeInstructions(
+  * @internal This is an internal helper function used by sendVersionedTransaction
+  */
+ async function sendRawTransactionWithRetry(
+-  connection: Connection,
++  connection: Rpc<SolanaRpcApi>,
+   transaction: Uint8Array,
+   {
+     maxRetries = DEFAULT_SEND_OPTIONS.maxRetries,
+@@ -469,7 +470,7 @@ async function sendRawTransactionWithRetry(
+         skipPreflight,
+         preflightCommitment: commitment,
+         maxRetries: 0,
+-      });
++      }).send();
+ 
+       if (isFirstSend) {
+         onStatusUpdate?.({ status: "sent", signature: signature ?? "" });
+@@ -521,22 +522,22 @@ async function sendRawTransactionWithRetry(
+  * @returns A tuple containing the lookup table address and the lookup table account
+  */
+ export async function createLookupTable(
+-  connection: Connection,
+-  sender: Keypair,
+-  additionalAddresses: PublicKey[],
++  connection: Rpc<SolanaRpcApi>,
++  sender: KeyPairSigner,
++  additionalAddresses: Address[],
+   priorityFee: number = 10000,
+-): Promise<[PublicKey, AddressLookupTableAccount]> {
+-  const slot = await connection.getSlot();
++): Promise<[Address, AddressLookupTableAccount]> {
++  const slot = await connection.getSlot().send();
+ 
+   const [lookupTableInst, lookupTableAddress] = AddressLookupTableProgram.createLookupTable({
+-    authority: sender.publicKey,
+-    payer: sender.publicKey,
++    authority: sender.address,
++    payer: sender.address,
+     recentSlot: slot,
+   });
+ 
+   const extendInstruction = AddressLookupTableProgram.extendLookupTable({
+-    payer: sender.publicKey,
+-    authority: sender.publicKey,
++    payer: sender.address,
++    authority: sender.address,
+     lookupTable: lookupTableAddress,
+     addresses: additionalAddresses,
+   });

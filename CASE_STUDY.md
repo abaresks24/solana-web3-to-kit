@@ -204,7 +204,7 @@ git clone --depth 1 https://github.com/solana-developers/helpers.git
 cd helpers
 git checkout a7e75d04cd4a83e6276a12526e839b2bf1d7b774
 
-git clone <this-repo> /tmp/solana-web3-to-kit
+git clone https://github.com/abaresks24/solana-web3-to-kit.git /tmp/solana-web3-to-kit
 
 npx codemod jssg run \
   /tmp/solana-web3-to-kit/scripts/codemod.ts \

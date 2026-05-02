@@ -89,13 +89,13 @@ solana-web3-to-kit/
 ## Usage
 
 ```bash
-# Install (once published)
-npx codemod @arthur/solana-web3-to-kit -t /path/to/your/repo
-
-# Or run locally
-git clone <this-repo>
+# Run locally
+git clone https://github.com/abaresks24/solana-web3-to-kit.git
 cd solana-web3-to-kit
 npx codemod workflow run -w workflow.yaml -t /path/to/your/repo
+
+# Once published to the registry:
+# npx codemod @abaresks24/solana-web3-to-kit -t /path/to/your/repo
 ```
 
 ## Development
